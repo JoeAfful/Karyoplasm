@@ -123,3 +123,197 @@ Plot[Evaluate[{Xcp[t], Xcm[t], Ycp[t], Ycm[t], Zcp[t], Zcm[t]} /.
 
  Using the same kfast variations as in problem 2 (10,30,60,200) this system appears to have less oscillations as compared to our previous model, and in general appears to have amplitudes that are inversely correlated with the kfast level as we saw previously but with a slight dip, from right to left we see a decrease in the amplitude of the concentrations, as kfast increases.
 
+
+
+
+
+
+Can we implement a mathematically robust Chemical Reaction Network (CRN),utilizing Polymer Reaction Network (PRN) logic,that accurately simulates the RNA-driven nucleation and subsequent dissolution of biomolecular condensates to achieve sustained limit-cycle oscillations?
+Implementation of a CRN that uses the PRN logic to simulate a reaction system consisting of RNA molecules nucleating a biomolecular condensate formation at low concentrations of the RNA but then dissolves the condensate at high concentrations of RNA..the RNA gets produced at some rate (transcription) and degraded as well. Degradation happens to both free RNA  and RNA bound to proteins. These proteins which would eventually form a condensate with RNA are also produced (translation) and degraded\[Ellipsis]additionally we'll work with 5 of these proteins which form the condensate with RNA in a fixed ratio. We define a halting size of the condensate which refers to the maximum number of RNA protein complexes that can aggregate to the complex stably. We also assume an infinite size so RNA can nuclear as many condensates and is unlimited by space complexities.
+
+Background:
+Biomolecular condensates are membrane-less organelles that form via liquid-liquid phase separation. They have a non-linear response to RNA concentration: at low concentrations, RNA acts as a scaffold to nucleate and grow the condensate, but at high concentrations, excess RNA acts as a "sponge," sequestering binding proteins and driving the dissolution of the droplet. In this exploration, I am modeling these phase transitions using deterministic CRN kinetics.
+
+To simulate this system, the model is built on several core biological and physical assumptions:
+
+The system is open and driven by continuous production (transcription of RNA, translation of proteins) and degradation. RNA degradation occurs both when free-floating and when bound within decoy complexes.
+
+The condensates are formed by RNA interacting with a specific set of five distinct proteins, which aggregate in a fixed stoichiometric ratio.
+
+Condensate growth is modeled using PRN logic, where species grow step-by-step up to a defined "halting size." This halting size represents the maximum number of RNA-protein complexes that can stably aggregate before thermodynamic or steric constraints prevent further growth.
+
+We assume a well-mixed system with an infinite spatial volume, ensuring that RNA can continuously nucleate new condensates without being limited by spatial crowding complexities.
+
+
+To construct a system capable of sustained limit-cycle oscillations, the model relies on two competing regulatory modules\[LongDash]a positive feedback "Generator" and a non-linear negative feedback "Trap"\[LongDash]built around a Polymer Reaction Network (PRN).
+1. Core Biological Turnover
+
+The system is fundamentally driven by continuous basal production and degradation of its raw components. Proteins (P1​ through P5​) are translated at a constant rate kTL​ and undergo slow, first-order degradation (kdegP​). Basal RNA is transcribed at a slow rate kTx​ to kickstart the system, and is rapidly degraded (kdegR​) to ensure the system can reset after a dissolution, since we need low RNA concentrations to nucleate.
+
+2. PRN Logic for Condensate Assembly
+
+The formation of the biomolecular condensate is modeled strictly using stepwise PRN logic to avoid improbable multi-body collisions. The assembly occurs in two phases:
+
+    Seed Formation: A free RNA molecule binds sequentially with individual proteins (P1​ through P5​) to form an intermediate seed complex, denoted as C5​.
+
+    Condensate Growth and Shrinkage: The fully formed C5​ seed transitions into the smallest stable condensate state, D1​. From here, the condensate grows by consuming additional C5​ seeds until it reaches the defined halting size of D10​.​
+
+    Concurrently, condensates experience continuous shrinkage (kshrink​), shedding C5​ units back into the pool. If a condensate shrinks below the D1​ state, it completely dissolves into its constituent raw materials (1 RNA and 5 Free Proteins), ensuring strict mass conservation.
+
+3. The "Generator" (Positive Feedback Module)
+
+For the system to break out of a steady state and oscillate, it requires an autocatalytic or positive feedback element. In this model, condensates act phenomenologically as highly efficient bioreactors (analogous to super-enhancers). The larger the condensate (s), the faster it "transcribes" new RNA: however it doesn't actually transcribe RNA, this is a substitute for the synergistic effects condensate may have on the rate of transcription near sites they form. They could also have inhibitory effects although that is not considered in this model.
+
+This mechanism ensures that as condensates nucleate and grow, they trigger an exponential spike in free RNA concentration.
+4. The "Sponge" (Negative Feedback Module)
+
+The rapid spike in RNA concentration triggers the destructive phase of the cycle. To prevent the system from settling into a stable plateau, the negative feedback must operate as a sharp, non-linear switch rather than a gradual leak.
+This is achieved by requiring cooperativity in the decoy formation:
+
+Because this reaction is second-order with respect to RNA ([RNA]2), the "sponge" effect remains negligible while the condensates are growing. However, the moment RNA crosses a critical threshold, the sponge reaction rate explodes, rapidly stripping free proteins from the environment and trapping them in decoy complexes.
+To complete the limit cycle, the decoys undergo a destructive reset:​
+Sequestered RNAs are degraded, clearing the system and releasing the free protein back into the environment to nucleate the next generation of condensates.
+
+
+
+Clear[kTx, kTxC, kdegR, kTL, kdegP, ktrap, ktrapRev, kNuc1, kSeed, 
+  kGrow, kShrink, kDissolve, CondensateOscillatorCRN, speciesList, 
+  initialConcs, rsys, sol];
+
+(*1. PARAMETERS*)
+kTx = 0.5; kTxC = 5.0; kdegR = 5;
+kTL = 1.0; kdegP = 0.2;
+ktrap = 5.0; ktrapRev = 0.2;
+kNuc1 = 1.0; kSeed = 1.0;
+kGrow = 5.0; kShrink = 1.0; kDissolve = 5.0;
+
+
+CondensateOscillatorCRN = \
+{(*reactions for transcribing and degrading RNA/Proteins*)
+   rxn[0, RNA, kTx],
+   rxn[RNA, 0, kdegR],
+   
+   (*Translation& Degradation*)
+   rxn[0, P1, kTL],
+   rxn[0, P2, kTL],
+   rxn[0, P3, kTL],
+   rxn[0, P4, kTL],
+   rxn[0, P5, kTL],
+   rxn[P1, 0, kdegP],
+   rxn[P2, 0, kdegP],
+   rxn[P3, 0, kdegP],
+   rxn[P4, 0, kdegP],
+   rxn[P5, 0, kdegP],
+   
+   
+   
+   (*NEGATIVE FEEDBACK:The RNA trap*)
+   rxn[RNA + RNA + P1, Decoy1, ktrap],
+   rxn[RNA + RNA + P2, Decoy2, ktrap],
+   rxn[RNA + RNA + P3, Decoy3, ktrap],
+   rxn[RNA + RNA + P4, Decoy4, ktrap],
+   rxn[RNA + RNA + P5, Decoy5, ktrap],
+   rxn[Decoy1, P1, ktrapRev],
+   rxn[Decoy2, P2, ktrapRev],
+   rxn[Decoy3, P3, ktrapRev],
+   rxn[Decoy4, P4, ktrapRev],
+   rxn[Decoy5, P5, ktrapRev],
+   
+   (*Nucleation*)
+   rxn[RNA + P1, C1, kNuc1],
+   rxn[C1 + P2, C2, kNuc1],
+   rxn[C2 + P3, C3, kNuc1],
+   rxn[C3 + P4, C4, kNuc1],
+   rxn[C4 + P5, C5, kNuc1],
+   
+   (*Growth*)
+   rxn[C5, D1, kSeed],
+   rxn[D1 + C5, D2, kGrow],
+   rxn[D2 + C5, D3, kGrow],
+   rxn[D3 + C5, D4, kGrow],
+   rxn[D4 + C5, D5, kGrow],
+   rxn[D5 + C5, D6, kGrow],
+   rxn[D6 + C5, D7, kGrow],
+   rxn[D7 + C5, D8, kGrow],
+   rxn[D8 + C5, D9, kGrow],
+   rxn[D9 + C5, D10, kGrow],
+   
+   (*Shrinkage*)
+   rxn[D10 + RNA, D9 + C5 + RNA, 10*kShrink],
+   rxn[D9 + RNA, D8 + C5 + RNA, 9*kShrink],
+   rxn[D8 + RNA, D7 + C5 + RNA, 8*kShrink],
+   rxn[D7 + RNA, D6 + C5 + RNA, 7*kShrink],
+   rxn[D6 + RNA, D5 + C5 + RNA, 6*kShrink],
+   rxn[D5 + RNA, D4 + C5 + RNA, 5*kShrink],
+   rxn[D4 + RNA, D3 + C5 + RNA, 4*kShrink],
+   rxn[D3 + RNA, D2 + C5 + RNA, 3*kShrink],
+   rxn[D2 + RNA, D1 + C5 + RNA, 2*kShrink],
+   rxn[D1, C5, kShrink],
+   
+   (*POSITIVE FEEDBACK: RNA "generation" from condensates*)
+   rxn[D1, D1 + RNA, 1*kTxC],
+   rxn[D2, D2 + RNA, 2*kTxC],
+   rxn[D3, D3 + RNA, 3*kTxC],
+   rxn[D4, D4 + RNA, 4*kTxC],
+   rxn[D5, D5 + RNA, 5*kTxC],
+   rxn[D6, D6 + RNA, 6*kTxC],
+   rxn[D7, D7 + RNA, 7*kTxC],
+   rxn[D8, D8 + RNA, 8*kTxC],
+   rxn[D9, D9 + RNA, 9*kTxC],
+   rxn[D10, D10 + RNA, 10*kTxC],
+   
+   
+   (*Dissolve*)
+   rxn[C5 + RNA, RNA + RNA + P1 + P2 + P3 + P4 + P5, kDissolve]};
+
+
+
+(*3. INITIALIZATION*)
+speciesList = {RNA, P1, P2, P3, P4, P5, Decoy1, Decoy2, Decoy3, 
+   Decoy4, Decoy5, C1, C2, C3, C4, C5, D1, D2, D3, D4, D5, D6, D7, D8,
+    D9, D10};
+
+initialConcs = Table[conc[sp, 0.0], {sp, speciesList}];
+
+rsys = Join[CondensateOscillatorCRN, initialConcs];
+
+(*4. SIMULATE*)
+tmax = 200;
+sol = SimulateRxnsys[rsys, tmax];
+
+(*5. VISUALIZATION*)
+Plot[Evaluate[{RNA[
+     t], (P1[t] + P2[t] + P3[t] + P4[t] + P5[t]), (D1[t] + D2[t] + 
+      D3[t] + D4[t] + D5[t] + D6[t] + D7[t] + D8[t] + D9[t] + 
+      D10[t])} /. sol], {t, 0, tmax}, 
+ PlotLegends -> {"Free RNA", "Free Protein", "Total Condensate Mass"},
+  AxesLabel -> {"Time", "Concentration"}, 
+ PlotStyle -> {Directive[Blue, Thick], Directive[Green, Thick], 
+   Directive[Red, Thick]}, PlotRange -> All, 
+ PlotLabel -> "Condensate-Driven Oscillations", 
+ GridLines -> Automatic]
+
+ParametricPlot3D[
+ Evaluate[{RNA[t], P1[t] + P2[t] + P3[t] + P4[t] + P5[t], 
+    D1[t] + 2*D2[t] + 3*D3[t] + 4*D4[t] + 5*D5[t] + 6*D6[t] + 
+     7*D7[t] + 8*D8[t] + 9*D9[t] + 10*D10[t]} /. sol], {t, 0, tmax}, 
+ AxesLabel -> {x, y, z}, 
+ ColorFunction -> Function[{x, y, z, t}, Hue[t]]] 
+
+Conclusion: Upon various implementations and variations on this model, a predicted oscillatory behavior was not seen, this could be due to incorrect orders of reactions, or a missing component to this system. A more rigorous implementation would be explored in future simulations.
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
