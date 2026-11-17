@@ -1,1 +1,125 @@
+Dynamics in stochastic CRNS.
+In the cell nuclues, CRNs are much more dynamic than can be represented by most analog CRNs. The Rössler system is a benchmark for deterministic chaos, characterized by extreme sensitivity to initial conditions and parameters. In a cell nucleus, however, we do not have a "well-mixed beaker." By introducing macromolecular crowding (MMC) through trapping and nonconstant reaction rates, we are asking whether biological "messiness" acts as a functional "buffer" that preserves complex dynamics in the face of environmental noise.
+ in this approach, I use an implementation of the linear solvation energy relationship which is described in assumptions to program a CRN which is representative of an approximation to the stochastic dynamics presented by the effects of macromolecular crowding within the nucleus. 
+Assumptions
+CRN dynamics in the cell nucleus is not recapitulated in a well mixed CRN model.
+	This is due to the effects of exclusion volume which follows from macromolecular crowding. In the nucleus, the presence of large molecules can cause strong and weak 		effects, weak effects likely from transient hydrophobic interactions and Van Der Waal forces. Strong effects are due to mechanisms that tend to kinetically trap molecules such 		that they are unable to participate in reactions, this may or may not be correlated to their 	decay mechanisms. In my simulation it is assumed that these are independent events 		since trapped molecules can eventually get freed.  While this does not violate mass-action kinetics, it introduces resonance/damping into the system depending on whether 		the macromolecular effects are cooperatively synergetic or not		
+Macromolecular crowding effects can be recapitulated via the use of the linear solvation energy relationship as developed by Kamlet and Taft (Droplets of Life). This is a three parameter polarity scale inclusive of the scales of hydrogen bond donor acidity, hydrogen bond acceptor basicity, and the polarizability of the molecule. In my system, the rate constant is the solute property used in this relationship. The effective rate constant in our case is given by 
+	K = K_0 + s*pi + a*alpha + b*beta
+	Where s, a and b are solute dependent coefficients and pi, alpha, beta represent the hydrogen bond donor acidity, hydrogen bond 		acceptor basicity, and the polarizability of the molecule respectively.
+	s*pi + a*alpha + b*beta is assumed in my model to be linearly dependent on K_0 to test the proof of concept since no specific 			molecules are implied. In this approach, s*pi + a*alpha + b*beta = 1/2(K_0). To simulate the stochastic nature, 1/2(K_0) is drawn from a 	Poisson distribution with mean 1/2(K_0). Initially, this was done using K_0 + s*pi + a*alpha + b*beta, but this lead to significant divergence of our system from the ideal solution.
+Construction of model:
+The "Memory" Effect: By adding the X,Y,Z->Xtrapped​, Ytrapped​, Ztrapped​ reactions, our initial ODE system is now a Delay Differential Equation (DDE) approximation. In a standard CRN, the "now" only depends on the "now." In this MMC-CRN, the "trapped" species act as a reservoir for future reactions effectively prolonging the reaction, and a "rate limiting" mechanism.
+The Poisson Logic: Using Clip[PoissonDistribution[0.5], {-0.5, 0.5}] creates a binary switching rate. Your rate constant is either K0-0.5, K0​, K0​+0.5 or somewhere in between. This represents a "micro-environment" model where a molecule is either in a "crowded" pocket or a "free" pocket, rather than a smooth Gaussian average.
+
+
+RosslerCRNMMC = {
+   (*dx/dt reactions*)
+   (*Clip sets the bounds of the Poisson Distribution*)
+   rxn[Zcp, Xcm, 
+    1 + Clip[RandomVariate[PoissonDistribution[0.5]], {-0.5, 0.5}]],
+   rxn[Zcm, Xcp, 
+    1 + Clip[RandomVariate[PoissonDistribution[0.5]], {-0.5, 0.5}]],
+   rxn[Ycp, Xcm, 
+    1 + Clip[RandomVariate[PoissonDistribution[0.5]], {-0.5, 0.5}]],
+   rxn[Ycm, Xcp, 
+    1 + Clip[RandomVariate[PoissonDistribution[0.5]], {-0.5, 0.5}]],
+   
+   
+   (*Ztcm, Ytcm, 
+   and Xtcm are introduced to represent the kinetically trapped states\
+ of Zcm, Xcm, and Ycm, 
+   this is a reversible transition with transitioning from the trapped\
+ state to a free state more favorable in this model*)
+   rxn[Zcm, Ztcm, 
+    0.5 + Clip[RandomVariate[PoissonDistribution[0.25]], {-0.25, 0.25}]],
+   rxn[Ztcm, Zcm, 
+    1.2 + Clip[RandomVariate[PoissonDistribution[0.6]], {-0.6, 0.6}]],
+   rxn[Zcp, Ztcp, 
+    0.5 + Clip[RandomVariate[PoissonDistribution[0.25]], {-0.25, 0.25}]],
+    rxn[Ztcp, Zcp, 
+    1.2 + Clip[RandomVariate[PoissonDistribution[0.6]], {-0.6, 0.6}]],
+   
+   rxn[Ycm, Ytcm, 
+    0.5 + Clip[RandomVariate[PoissonDistribution[0.25]], {-0.25, 0.25}]],
+   rxn[Ytcm, Ycm, 
+    1.8 + Clip[RandomVariate[PoissonDistribution[0.9]], {-0.9, 0.9}]],
+   rxn[Ycp, Ytcp, 
+    0.5 + Clip[RandomVariate[PoissonDistribution[0.25]], {-0.25, 0.25}]],
+    rxn[Ytcp, Ycp, 
+    0.8 + Clip[RandomVariate[PoissonDistribution[0.4]], {-0.4, 0.4}]],
+   
+   rxn[Xcm, Xtcm, 
+    1.4 + Clip[RandomVariate[PoissonDistribution[0.7]], {-0.7, 0.7}]],
+   rxn[Xtcm, Xcm, 
+    3 + Clip[RandomVariate[PoissonDistribution[1.5]], {-1.5, 1.5}]],
+   rxn[Xcp, Xtcp, 
+    1.8 + Clip[RandomVariate[PoissonDistribution[0.9]], {-0.9, 0.9}]],
+   rxn[Xtcp, Xcp, 
+    3 + Clip[RandomVariate[PoissonDistribution[1.5]], {-1.5, 1.5}]],
+   
+   (*dy/dt reactions*)
+   rxn[Xcp, Xcp + Ycp, 
+    1 + Clip[RandomVariate[PoissonDistribution[0.5]], {-0.5, 0.5}]],
+   rxn[Xcm, Xcm + Ycm, 
+    1 + Clip[RandomVariate[PoissonDistribution[0.5]], {-0.5, 0.5}]],
+   rxn[Ycp, 2 Ycp, 
+    0.2 + Clip[RandomVariate[PoissonDistribution[0.1]], {-0.1, 0.1}]],
+   rxn[Ycm, 2 Ycm, 
+    0.2 + Clip[RandomVariate[PoissonDistribution[0.1]], {-0.1, 0.1}]],
+   
+   
+   (*dz/dt reactions*)
+   rxn[0, Zcp, 
+    0.2 + Clip[RandomVariate[PoissonDistribution[0.1]], {-0.1, 0.1}]],
+   rxn[Zcp + Xcp, 2 Zcp + Xcp, 
+    0.2 + Clip[RandomVariate[PoissonDistribution[0.1]], {-0.1, 0.1}]],
+   rxn[Zcm + Xcm, Zcp + Xcm + Zcm, 
+    1 + Clip[RandomVariate[PoissonDistribution[0.5]], {-0.5, 0.5}]],
+   rxn[Zcp + Xcm, Zcm + Xcm + Zcp, 
+    1 + Clip[RandomVariate[PoissonDistribution[0.5]], {-0.5, 0.5}]],
+   rxn[Zcm + Xcp, 2 Zcm + Xcp, 
+    1 + Clip[RandomVariate[PoissonDistribution[0.5]], {-0.5, 0.5}]],
+   rxn[Zcp, Zcm, 
+    5.7 + Clip[RandomVariate[PoissonDistribution[3.85]], {-3.85, 3.85}]],
+   
+   
+   
+   (* annihilation reactions *)
+   rxn[Xcp + Xcm, 0, kfast], rxn[Ycp + Ycm, 0, kfast], 
+   rxn[Zcp + Zcm, 0, kfast]
+   } /. {a -> 0.2, b -> 0.2, c -> 5.7, kfast -> 200}
+
+
+
+
+
+tmax = 40; sol = 
+ SimulateRxnsys[
+  RosslerCRNMMC~
+   Join~{conc[Xcp, 1], conc[Ycp, 1], conc[Zcp, 1], conc[Xcm, 0], 
+    conc[Ycm, 0], conc[Zcm, 0]}, tmax];
+
+
+Plot[Evaluate[{Xcp[t], Xcm[t], Ycp[t], Ycm[t], Zcp[t], Zcm[t]} /. 
+   sol], {t, 0, tmax}, 
+ PlotStyle -> {{Red}, {Dashed, Red}, {Green}, {Dashed, 
+    Green}, {Blue}, {Dashed, Blue}}, 
+ AxesLabel -> {"time", "concentration"}, 
+ PlotLegends -> {Xcp, Xcm, Ycp, Ycm, Zcp, Zcm}] 
+
+
+ ParametricPlot3D[
+ Evaluate[{Xcp[t] - Xcm[t], Ycp[t] - Ycm[t], Zcp[t] - Zcm[t]} /. 
+   sol], {t, 0, tmax}, AxesLabel -> {x, y, z}, 
+ ColorFunction -> Function[{x, y, z, t}, Hue[t]]] 
+
+
+
+ RxnsysToOdesys[RosslerCRN]
+
+
+
+
+ Using the same kfast variations as in problem 2 (10,30,60,200) this system appears to have less oscillations as compared to our previous model, and in general appears to have amplitudes that are inversely correlated with the kfast level as we saw previously but with a slight dip, from right to left we see a decrease in the amplitude of the concentrations, as kfast increases.
 
